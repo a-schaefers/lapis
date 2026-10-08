@@ -1,6 +1,28 @@
 local encode_base64, decode_base64, hmac_sha1
 local config = require("lapis.config").get()
-local openssl_hmac = require("openssl.hmac")
+local new_hmac
+do
+  local has_luaossl, openssl_hmac = pcall(require, "openssl.hmac")
+  if has_luaossl then
+    new_hmac = openssl_hmac.new
+  elseif pcall(function()
+    return require("resty.openssl.hmac")
+  end) then
+    new_hmac = require("resty.openssl.hmac").new
+  else
+    local luaossl_err = openssl_hmac
+    new_hmac = function(secret, digest_type)
+      return error("lapis.util.encoding: hmac_" .. tostring(digest_type) .. " requires luaossl or lua-resty-openssl, but luaossl failed to load: " .. tostring(luaossl_err))
+    end
+  end
+end
+local hmac_for
+hmac_for = function(digest_type)
+  return function(secret, str)
+    local hmac = assert(new_hmac(secret, digest_type))
+    return assert(hmac:final(str))
+  end
+end
 if ngx then
   do
     local _obj_0 = ngx
@@ -16,16 +38,9 @@ else
   decode_base64 = function(...)
     return (unb64(...))
   end
-  hmac_sha1 = function(secret, str)
-    local hmac = openssl_hmac.new(secret, "sha1")
-    return hmac:final(str)
-  end
+  hmac_sha1 = hmac_for("sha1")
 end
-local hmac_sha256
-hmac_sha256 = function(secret, str)
-  local hmac = openssl_hmac.new(secret, "sha256")
-  return hmac:final(str)
-end
+local hmac_sha256 = hmac_for("sha256")
 local default_hmac
 local _exp_0 = config.hmac_digest
 if "sha256" == _exp_0 then

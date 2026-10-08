@@ -476,6 +476,13 @@ encoding = require "lapis.util.encoding"
 ]]
 }
 
+Inside OpenResty, `encode_base64`, `decode_base64` and `hmac_sha1` use the
+implementations built into `ngx`. Any other HMAC is calculated with
+[luaossl](https://github.com/wahern/luaossl), or with
+[lua-resty-openssl](https://github.com/fffonion/lua-resty-openssl) when luaossl
+can't be loaded. Without either library the module still loads, but
+calculating that HMAC raises an error.
+
 ### `encode_base64(str)`
 
 Base64 encodes a string.
@@ -614,7 +621,9 @@ to have it encoded into the token. You can then use the `callback` parameter of
 `validate_token` to verify data's value.
 
 The random string is stored in a cookie named as your session name with
-`_token` appended to the end.
+`_token` appended to the end. Its random bytes come from luaossl. Inside
+OpenResty, the `resty.random` module that ships with OpenResty is used when
+luaossl can't be loaded.
 
 ### `csrf.validate_token(req, callback=nil)`
 

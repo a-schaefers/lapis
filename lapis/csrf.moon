@@ -1,16 +1,35 @@
 -- csrf protection
 
 import encode_base64, encode_with_secret, decode_with_secret from require "lapis.util.encoding"
-openssl_rand = require "openssl.rand"
 
 config = require"lapis.config".get!
 cookie_name = "#{config.session_name}_token"
+
+-- luaossl is optional so it doesn't have to be installed for apps running in
+-- OpenResty, which bundles resty.random. resty.random calls into the OpenSSL
+-- that nginx is linked with, so it's only used inside of a real nginx process.
+-- (The fake ngx of a simulated request has no ngx.config)
+random_bytes = do
+  has_luaossl, openssl_rand = pcall require, "openssl.rand"
+
+  if has_luaossl
+    openssl_rand.bytes
+  elseif ngx and ngx.config and pcall -> require "resty.random"
+    resty_random = require "resty.random"
+    (n) ->
+      bytes = resty_random.bytes n, true
+      assert bytes, "lapis.csrf: resty.random failed to generate random bytes"
+      bytes
+  else
+    luaossl_err = openssl_rand
+    ->
+      error "lapis.csrf: generating a token requires luaossl (or resty.random in OpenResty), but luaossl failed to load: #{luaossl_err}"
 
 generate_token = (req, data) ->
   key = req.cookies[cookie_name]
 
   unless key
-    key = encode_base64 openssl_rand.bytes(32)
+    key = encode_base64 random_bytes 32
     req.cookies[cookie_name] = key
 
   token = {

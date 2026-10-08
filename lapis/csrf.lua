@@ -3,14 +3,34 @@ do
   local _obj_0 = require("lapis.util.encoding")
   encode_base64, encode_with_secret, decode_with_secret = _obj_0.encode_base64, _obj_0.encode_with_secret, _obj_0.decode_with_secret
 end
-local openssl_rand = require("openssl.rand")
 local config = require("lapis.config").get()
 local cookie_name = tostring(config.session_name) .. "_token"
+local random_bytes
+do
+  local has_luaossl, openssl_rand = pcall(require, "openssl.rand")
+  if has_luaossl then
+    random_bytes = openssl_rand.bytes
+  elseif ngx and ngx.config and pcall(function()
+    return require("resty.random")
+  end) then
+    local resty_random = require("resty.random")
+    random_bytes = function(n)
+      local bytes = resty_random.bytes(n, true)
+      assert(bytes, "lapis.csrf: resty.random failed to generate random bytes")
+      return bytes
+    end
+  else
+    local luaossl_err = openssl_rand
+    random_bytes = function()
+      return error("lapis.csrf: generating a token requires luaossl (or resty.random in OpenResty), but luaossl failed to load: " .. tostring(luaossl_err))
+    end
+  end
+end
 local generate_token
 generate_token = function(req, data)
   local key = req.cookies[cookie_name]
   if not (key) then
-    key = encode_base64(openssl_rand.bytes(32))
+    key = encode_base64(random_bytes(32))
     req.cookies[cookie_name] = key
   end
   local token = {

@@ -140,4 +140,33 @@ sorted_pairs = (sort=table.sort) ->
   after_each ->
     _G.pairs = _pairs
 
-{ :with_query_fn, :assert_queries, :stub_queries, :sorted_pairs }
+-- Loads a fresh copy of a module while the modules in stubs are replaced: a
+-- table is returned in their place, and false makes requiring them fail as if
+-- they weren't installed. Everything is put back before returning, so only the
+-- returned copy of the module sees the stubs
+require_with_stubs = (name, stubs) ->
+  prev_loaded = {}
+  prev_preload = {}
+
+  for mod_name, stub in pairs stubs
+    prev_loaded[mod_name] = package.loaded[mod_name]
+    prev_preload[mod_name] = package.preload[mod_name]
+    package.loaded[mod_name] = nil
+    package.preload[mod_name] = if stub
+      -> stub
+    else
+      -> error "module '#{mod_name}' not found (stubbed by spec)", 0
+
+  prev_module = package.loaded[name]
+  package.loaded[name] = nil
+  ok, mod = pcall require, name
+  package.loaded[name] = prev_module
+
+  for mod_name in pairs stubs
+    package.loaded[mod_name] = prev_loaded[mod_name]
+    package.preload[mod_name] = prev_preload[mod_name]
+
+  assert ok, mod
+  mod
+
+{ :with_query_fn, :assert_queries, :stub_queries, :sorted_pairs, :require_with_stubs }

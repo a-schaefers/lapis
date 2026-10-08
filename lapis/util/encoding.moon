@@ -2,7 +2,27 @@
 local encode_base64, decode_base64, hmac_sha1
 
 config = require"lapis.config".get!
-openssl_hmac = require "openssl.hmac"
+
+-- luaossl is optional so it doesn't have to be installed for apps running in
+-- OpenResty, where lua-resty-openssl can be used instead. Both libraries
+-- provide new(key, digest_type) to create an hmac. With neither installed,
+-- calculating an hmac raises an error that includes why luaossl failed to load
+new_hmac = do
+  has_luaossl, openssl_hmac = pcall require, "openssl.hmac"
+
+  if has_luaossl
+    openssl_hmac.new
+  elseif pcall -> require "resty.openssl.hmac"
+    require("resty.openssl.hmac").new
+  else
+    luaossl_err = openssl_hmac
+    (secret, digest_type) ->
+      error "lapis.util.encoding: hmac_#{digest_type} requires luaossl or lua-resty-openssl, but luaossl failed to load: #{luaossl_err}"
+
+hmac_for = (digest_type) ->
+  (secret, str) ->
+    hmac = assert new_hmac secret, digest_type
+    assert hmac\final str
 
 if ngx
   {:encode_base64, :decode_base64, :hmac_sha1} = ngx
@@ -12,17 +32,13 @@ else
   encode_base64 = (...) -> (b64 ...)
   decode_base64 = (...) -> (unb64 ...)
 
-  hmac_sha1 = (secret, str) ->
-    hmac = openssl_hmac.new secret, "sha1"
-    hmac\final str
+  hmac_sha1 = hmac_for "sha1"
 
 ---Generate HMAC-SHA256 hash
 ---@param secret string Secret key for HMAC
 ---@param str string String to hash
 ---@return string hash Binary HMAC-SHA256 digest
-hmac_sha256 = (secret, str) ->
-  hmac = openssl_hmac.new secret, "sha256"
-  hmac\final str
+hmac_sha256 = hmac_for "sha256"
 
 default_hmac = switch config.hmac_digest
   when "sha256"
