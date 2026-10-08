@@ -34,6 +34,36 @@ $ luarocks install lapis
 > within its own runtime you will want to install Lapis targeting Lua 5.1. You
 > can use the `--lua-version=5.1` flag with LuaRocks to accomplish this.
 
+### Troubleshooting luaossl Build Errors
+
+Lapis depends on [luaossl](https://github.com/wahern/luaossl), a C module that
+LuaRocks compiles when it installs Lapis. GCC 15 and newer use the C23 standard
+by default, and building luaossl as C23 needs recent releases of both luaossl
+and OpenSSL. With older ones the install stops with compiler errors like these:
+
+    src/openssl.c:12452:14: error: passing argument 1 of 'PEM_ASN1_write_bio' from incompatible pointer type [-Wincompatible-pointer-types]
+    src/openssl.c:1186:26: error: too many arguments to function 'optcmp'; expected 0, have 2
+
+To work around it, have LuaRocks compile with GNU C17, which was the default
+before GCC 15:
+
+```bash
+$ luarocks install lapis CFLAGS="-O2 -fPIC -std=gnu17"
+```
+
+Setting `CFLAGS` replaces the flags LuaRocks uses by default, which is why the
+value repeats `-O2 -fPIC`. Leaving out `-fPIC` makes the build fail when
+linking. The setting applies to every C module the command compiles, and the
+same argument works with other LuaRocks commands that compile luaossl, such as
+`luarocks build --only-deps`.
+
+Alternatively, update OpenSSL, including its development headers. OpenSSL
+fixed its part in 3.0.19, 3.3.6, 3.4.4, 3.5.5, 3.6.1 and 4.0.0, and every later
+release in those series has the fix. The 3.1 and 3.2 series never got it.
+luaossl fixed its part in release 20250929, and LuaRocks installs the newest
+release unless your project pins an older one. A luaossl older than 20250929
+needs the `CFLAGS` workaround whatever your OpenSSL version.
+
 ## Creating An Application
 
 ### `lapis` Command Line Tool
